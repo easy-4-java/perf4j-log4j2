@@ -5,7 +5,7 @@
 
 	<groupId>io.github.hiwepy</groupId>
 	<artifactId>perf4j-log4j2</artifactId>
-	<version>1.0.0-SNAPSHOT</version>
+	<version>2.0.x.20260630-SNAPSHOT</version>
 	<description>Perf4j Extension Whith Log4j 2.x</description>
 	<name>${project.groupId}:${project.artifactId}</name>
 	<url>https://github.com/hiwepy/${project.artifactId}</url>
