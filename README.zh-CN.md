@@ -4,6 +4,8 @@
 
 [![Java](https://img.shields.io/badge/Java-21-orange)](https://github.com/easy-4-java/perf4j-log4j2) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](./LICENSE)
 
+perf4j-log4j2 将 Perf4J 计时库移植到 Log4j 2.x。
+
 ## 目录
 
 - [1. 项目概述](#1-项目概述)
