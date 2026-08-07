@@ -4,6 +4,8 @@
 
 [![Java](https://img.shields.io/badge/Java-8-orange)](https://github.com/easy-4-java/perf4j-log4j2) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](./LICENSE)
 
+perf4j-log4j2 ports the Perf4J timing library to Log4j 2.x
+
 ## Table of Contents
 
 - [1. Project Overview](#1-project-overview)
