@@ -13,153 +13,177 @@ import org.perf4j.helpers.GroupedTimingStatisticsCsvFormatter;
 import org.perf4j.helpers.MiscUtils;
 
 /**
- * A layout that outputs {@link org.perf4j.GroupedTimingStatistics} instances as
- * comma-separated values. Thus, this layout is designed to be attached to
- * appenders that are themselves attached to an
+ * Log4j 2.x layout that renders {@link GroupedTimingStatistics} log events as
+ * comma-separated values. This layout is intended to be attached to a
+ * downstream appender that is itself attached to an
  * {@link AsyncCoalescingStatisticsAppender}.
- * <p>
- * By default, each GroupedTimingStatistics object is output as a bunch of
- * lines, with one line for each tagged {@link org.perf4j.TimingStatistics}
- * instance contained within the GroupedTimingStatistics object. The following
- * "columns" are output, separated by commas:
+ *
+ * <p>By default, each {@link GroupedTimingStatistics} event is emitted as one
+ * line per tagged timing statistic, with the following columns:</p>
  * <ol>
- * <li>tag - the tag name of the code block that the statistics refer to
- * <li>start - the start time of timing window
- * <li>stop - the stop time of the timing window
- * <li>mean - the mean execution time of stop watch logs that completed in the
- * timing window
- * <li>min - the min execution time of stop watch logs that completed in the
- * timing window
- * <li>max - the max execution time of stop watch logs that completed in the
- * timing window
- * <li>stddev - the standard deviation of the execution times of stop watch logs
- * that completed in the timing window
- * <li>count - the count of stop watch logs that completed during the timing
- * window
+ *   <li>tag - the tag name of the code block that the statistics refer to</li>
+ *   <li>start - the start time of the timing window</li>
+ *   <li>stop - the stop time of the timing window</li>
+ *   <li>mean - the mean execution time within the timing window</li>
+ *   <li>min - the minimum execution time within the timing window</li>
+ *   <li>max - the maximum execution time within the timing window</li>
+ *   <li>stddev - the standard deviation of execution times within the window</li>
+ *   <li>count - the number of stop-watch logs captured in the window</li>
  * </ol>
- * <p>
- * You can modify the columns output using the <b>Columns</b> option. For
- * example, you could specify the Columns option as "tag,start,stop,mean,count"
- * to only output those specified values. In addition to the values specified
- * above you can also use "tps" to output transactions per second.
- * <p>
- * In addition to the default output of one line per tag for each
- * GroupedTimingStatistics object, this layout also supports a <b>Pivot</b>
- * option which outputs just a single line for an entire GroupedTimingStatistics
- * object. When pivot is true you should set the Columns to specify the values
- * from the specific tags you want to output. For example, setting Pivot to true
- * and setting Columns to "start,stop,codeBlock1Mean,codeBlock2Mean" would
- * cause, for each GroupedTimingStatistics object, a single line to be output
- * with the start and stop times of the window, the mean execution time for all
- * stop watch logs with a codeBlock1 tag, and the mean execution time for all
- * stop watch logs with a codeBlock2 tag.
+ *
+ * <p>The {@link #setColumns(String) Columns} option can override the default
+ * column list. The special token {@code tps} can be added to expose
+ * transactions-per-second.</p>
+ *
+ * <p>Setting {@link #setPivot(boolean) Pivot} to {@code true} collapses the
+ * output to a single line per {@link GroupedTimingStatistics} event; in that
+ * case the columns should reference specific tags (e.g.
+ * {@code "start,stop,codeBlock1Mean,codeBlock2Mean"}).</p>
  *
  * @author Alex Devine
+ * @author [@Loong Wan](https://github.com/loong10k)
+ * @since 3.0.0
+ * @see GroupedTimingStatisticsCsvFormatter
+ * @see AsyncCoalescingStatisticsAppender
  */
 public class StatisticsCsvLayout extends AbstractCsvLayout {
 
+    /**
+     * Convenience factory that builds the layout with the Log4j 2 default
+     * charset and CSV format.
+     *
+     * @return a new {@link StatisticsCsvLayout} configured with the Log4j 2
+     *         defaults.
+     */
 	public static AbstractCsvLayout createDefaultLayout() {
 		return new StatisticsCsvLayout(null, Charset.forName(DEFAULT_CHARSET), CSVFormat.valueOf(DEFAULT_FORMAT), null, null);
 	}
 
+    /**
+     * Convenience factory that builds the layout with a caller-supplied
+     * {@link CSVFormat} while keeping the default charset.
+     *
+     * @param format the CSV format to use. Must not be {@code null}.
+     * @return a new {@link StatisticsCsvLayout} configured with the supplied
+     *         CSV format.
+     */
 	public static AbstractCsvLayout createLayout(final CSVFormat format) {
 		return new StatisticsCsvLayout(null, Charset.forName(DEFAULT_CHARSET), format, null, null);
 	}
 
-	public StatisticsCsvLayout(final Configuration config, final Charset charset, final CSVFormat csvFormat,
+    /**
+     * Constructs the layout with full control over every CSV concern.
+     *
+     * @param config    the Log4j 2 configuration. May be {@code null}.
+     * @param charset   the character set used to encode the output.
+     * @param csvFormat the CSV format applied to the output.
+     * @param header    the optional header to prepend to each batch.
+     * @param footer    the optional footer to append to each batch.
+     */
+    public StatisticsCsvLayout(final Configuration config, final Charset charset, final CSVFormat csvFormat,
 			final String header, final String footer) {
 		super(config, charset, csvFormat, header, footer);
 	}
 
 	// --- configuration options ---
 	/**
-	 * Pivot option
+	 * Pivot option. When {@code true}, the layout emits a single line per
+	 * {@link GroupedTimingStatistics} event instead of one line per tag.
 	 */
 	private boolean pivot = false;
 	/**
 	 * Columns option, a comma-separated list of column values to output.
+	 * Defaults to {@link GroupedTimingStatisticsCsvFormatter#DEFAULT_FORMAT_STRING}.
 	 */
 	private String columns = GroupedTimingStatisticsCsvFormatter.DEFAULT_FORMAT_STRING;
 	/**
-	 * PrintNotStatistics option
+	 * PrintNonStatistics option. When {@code true}, non-{@link GroupedTimingStatistics}
+	 * events are emitted using their string representation.
 	 */
 	private boolean printNonStatistics = false;
 
 	// --- contained objects ---
 	/**
-	 * The csvFormatter is created in the {@link #activateOptions} method. The work
-	 * of actually formatting the GroupedTimingStatistics object is delegated to
-	 * this object.
+	 * The CSV formatter that actually performs the rendering. Built in
+	 * {@link #activateOptions()} from the current {@link #pivot} and
+	 * {@link #columns} values.
 	 */
 	protected GroupedTimingStatisticsCsvFormatter csvFormatter;
 
 	// --- configuration options ---
 
 	/**
-	 * The <b>Pivot</b> option, which is false by default, determines whether or not
-	 * a single line will be output for each GroupedTimingStatistics object, or
-	 * whether one line for each tag within a GroupedTimingStatistics object will be
-	 * output.
+	 * Returns the {@link #pivot Pivot} option.
 	 *
-	 * @return the Pivot option.
+	 * @return {@code true} when a single line is emitted per
+	 *         {@link GroupedTimingStatistics} event; {@code false} for one
+	 *         line per tag.
 	 */
 	public boolean isPivot() {
 		return pivot;
 	}
 
 	/**
-	 * Sets the value of the <b>Pivot</b> option.
+	 * Sets the {@link #pivot Pivot} option.
 	 *
-	 * @param pivot The new Pivot option value.
+	 * @param pivot the new Pivot option value. {@code true} collapses the
+	 *              output to a single line per event.
 	 */
 	public void setPivot(boolean pivot) {
 		this.pivot = pivot;
 	}
 
 	/**
-	 * The <b>Columns</b> option is a comma-separated list of the values that should
-	 * be output for each line that is printed. See the class javadoc for the
-	 * allowed value.
+	 * Returns the configured {@link #columns Columns} option.
 	 *
-	 * @return the Columns option.
+	 * @return the comma-separated list of column tokens to be emitted.
 	 */
 	public String getColumns() {
 		return columns;
 	}
 
 	/**
-	 * Sets the value of the <b>Columns</b> option.
+	 * Sets the comma-separated list of column tokens to emit.
 	 *
-	 * @param columns The new Columns option value.
+	 * @param columns the new Columns option value. See the class-level Javadoc
+	 *                for the supported token names.
 	 */
 	public void setColumns(String columns) {
 		this.columns = columns;
 	}
 
 	/**
-	 * Gets the value of the <b>PrintNonStatistics</b> option. In general, this
-	 * layout should only be used for appenders that deal with
-	 * GroupedTimingStatistics objects (e.g. a FileAppender attached to an
-	 * {@link AsyncCoalescingStatisticsAppender}). By default, any logging event
-	 * where the message is NOT a GroupedTimingStatistics object is not output.
-	 * However, if this option is set to true, then non-GroupedTimingStatistics
-	 * messages will be output as their string value.
+	 * Returns the {@link #printNonStatistics PrintNonStatistics} option.
 	 *
-	 * @return the PrintNonStatistics option
+	 * @return {@code true} if non-{@link GroupedTimingStatistics} events are
+	 *         emitted as their string value; {@code false} if they are
+	 *         suppressed.
 	 */
 	public boolean isPrintNonStatistics() {
 		return printNonStatistics;
 	}
 
 	/**
-	 * Sets the value of the <b>PrintNonStatistics</b> option.
+	 * Sets the {@link #printNonStatistics PrintNonStatistics} option.
 	 *
-	 * @param printNonStatistics The new PrintNonStatistics option value.
+	 * @param printNonStatistics the new PrintNonStatistics option value.
 	 */
 	public void setPrintNonStatistics(boolean printNonStatistics) {
 		this.printNonStatistics = printNonStatistics;
 	}
 
+    /**
+     * Formats the supplied log event as CSV.
+     *
+     * <p>If the event carries a {@link GroupedTimingStatistics} message it is
+     * delegated to the {@link GroupedTimingStatisticsCsvFormatter}. Otherwise
+     * the event is either rendered as its string representation (when
+     * {@link #printNonStatistics} is enabled) or skipped entirely.</p>
+     *
+     * @param event the log event to format.
+     * @return the CSV-encoded rendering, or an empty string when the event
+     *         should be suppressed.
+     */
 	public String format(Log4jLogEvent event) {
 		try {
 			// we assume that the event is a GroupedTimingStatistics object
@@ -176,18 +200,32 @@ public class StatisticsCsvLayout extends AbstractCsvLayout {
 	}
 
 	/**
-	 * This layout ignores Throwables set on the LoggingEvent.
+	 * This layout always ignores {@link Throwable} instances attached to the
+	 * underlying log event &mdash; only the message body is rendered.
 	 *
-	 * @return true
+	 * @return always {@code true}.
 	 */
 	public boolean ignoresThrowable() {
 		return true;
 	}
 
+    /**
+     * Builds the underlying {@link GroupedTimingStatisticsCsvFormatter} from
+     * the current {@link #pivot} and {@link #columns} options.
+     */
 	public void activateOptions() {
 		csvFormatter = new GroupedTimingStatisticsCsvFormatter(isPivot(), getColumns());
 	}
 
+    /**
+     * Returns {@code null} &mdash; this layout delegates the actual rendering
+     * to {@link #format(Log4jLogEvent)} and intentionally does not implement
+     * the generic {@link org.apache.logging.log4j.core.Layout} {@code toSerializable}
+     * contract.
+     *
+     * @param event the log event to serialize.
+     * @return always {@code null}.
+     */
 	@Override
 	public String toSerializable(LogEvent event) {
 		return null;
