@@ -26,16 +26,54 @@ import org.perf4j.helpers.MiscUtils;
 import org.perf4j.helpers.StatisticsExposingMBean;
 
 /**
- * This appender is designed to be attached to an {@link AsyncCoalescingStatisticsAppender}. It takes the incoming
- * GroupedTimingStatistics log messages and uses this data to update the value of a JMX MBean. The attributes on this
- * MBean can then be monitored by external tools. In addition, this class allows you to specify notification thresholds
- * so that a JMX notification is sent if one of the attributes falls outside an acceptable range (for example, if
- * the mean time for a specific value is too high).
+ * Log4j 2.x {@link Appender} that consumes {@link GroupedTimingStatistics} log
+ * messages and pushes the rolled-up statistics into a JMX MBean so external
+ * monitoring tools can observe mean/min/max/stddev/count/TPS values per tag.
+ *
+ * <p>This appender is designed to be attached downstream of an
+ * {@link AsyncCoalescingStatisticsAppender}: the upstream appender coalesces
+ * stop-watch logs into a {@link GroupedTimingStatistics} on a periodic time
+ * slice, and this appender merely forwards those groups to the
+ * {@link StatisticsExposingMBean} it manages.</p>
+ *
+ * <p>In addition to the periodic attribute updates, the appender can be
+ * configured with <i>notification thresholds</i> (described under
+ * {@link #getNotificationThresholds()}) so that a JMX notification is fired when
+ * a tagged statistic falls outside of an acceptable range (e.g. the mean
+ * execution time for a critical code path exceeds a budget).</p>
+ *
+ * <p>Configuration knobs:</p>
+ * <ul>
+ *   <li><b>name</b> &mdash; the appender name (Log4j 2 required).</li>
+ *   <li><b>tagNamesToExpose</b> &mdash; comma-separated tag names whose
+ *       statistics should be exposed as JMX attributes.</li>
+ *   <li><b>mBeanName</b> &mdash; the JMX {@link ObjectName} under which the
+ *       underlying MBean is registered. Defaults to
+ *       {@link StatisticsExposingMBean#DEFAULT_MBEAN_NAME}.</li>
+ *   <li><b>notificationThresholds</b> &mdash; comma-separated
+ *       {@link AcceptableRangeConfiguration} strings.</li>
+ * </ul>
+ *
+ * @author [@Loong Wan](https://github.com/loong10k)
+ * @since 3.0.0
+ * @see StatisticsExposingMBean
+ * @see AcceptableRangeConfiguration
+ * @see GroupedTimingStatistics
  */
 @Plugin(name = "JmxAttributes", category = Node.CATEGORY, elementType = Appender.ELEMENT_TYPE, printObject = true)
 public class JmxAttributeStatisticsAppender extends AbstractAppender {
-   
-	@PluginFactory
+
+    /**
+     * Log4j 2 plugin factory used to instantiate this appender from a
+     * configuration file.
+     *
+     * @param layout           the optional layout applied to the log events. May be {@code null}.
+     * @param filter           the optional filter applied to accepted events. May be {@code null}.
+     * @param name             the appender name. Required by Log4j 2.
+     * @param ignoreExceptions whether exceptions during appending should be ignored.
+     * @return a fully constructed {@link JmxAttributeStatisticsAppender}.
+     */
+    @PluginFactory
     public static JmxAttributeStatisticsAppender createAppender(
             @PluginElement("Layout") final Layout<? extends Serializable> layout,
             @PluginElement("Filter") final Filter filter,
@@ -43,122 +81,138 @@ public class JmxAttributeStatisticsAppender extends AbstractAppender {
             @PluginAttribute(value = "ignoreExceptions", defaultBoolean = true) final boolean ignoreExceptions) {
         return new JmxAttributeStatisticsAppender(name, filter, layout, ignoreExceptions);
     }
-	
-	protected JmxAttributeStatisticsAppender(String name, Filter filter,
+
+    /**
+     * Constructs a new appender that surfaces exceptions during the append
+     * lifecycle (the legacy Log4j 2 constructor compatibility form).
+     *
+     * @param name   the appender name.
+     * @param filter the optional filter applied to events. May be {@code null}.
+     * @param layout the optional layout. May be {@code null}.
+     */
+    protected JmxAttributeStatisticsAppender(String name, Filter filter,
 			Layout<? extends Serializable> layout) {
 		super(name, filter, layout);
 	}
 
-	protected JmxAttributeStatisticsAppender(String name, Filter filter,
+    /**
+     * Constructs a new appender with explicit control over exception handling.
+     *
+     * @param name             the appender name.
+     * @param filter           the optional filter applied to events. May be {@code null}.
+     * @param layout           the optional layout. May be {@code null}.
+     * @param ignoreExceptions whether exceptions during appending should be ignored.
+     */
+    protected JmxAttributeStatisticsAppender(String name, Filter filter,
 			Layout<? extends Serializable> layout, boolean ignoreExceptions) {
 		super(name, filter, layout, ignoreExceptions);
 	}
-	
- 
+
+
 	// --- configuration options ---
     /**
-     * The object name of the MBean exposed through the JMX server.
+     * The JMX {@link ObjectName} under which the {@link StatisticsExposingMBean}
+     * is registered. Defaults to {@link StatisticsExposingMBean#DEFAULT_MBEAN_NAME}.
      */
     private String mBeanName = StatisticsExposingMBean.DEFAULT_MBEAN_NAME;
     /**
-     * A comma separated list of the tag names to be exposed as JMX attributes.
+     * Comma-separated list of tag names whose statistics should be exposed as
+     * JMX attributes (e.g. {@code "databaseCall,fileWrite"}). Required: must be
+     * supplied before {@link #activateOptions()} is called.
      */
     private String tagNamesToExpose;
     /**
-     * A comma separated list of the notification thresholds, which controls whether JMX notifications are sent
-     * when attribute values fall outside acceptable ranges.
+     * Comma-separated list of notification thresholds in
+     * {@link AcceptableRangeConfiguration} syntax. May be {@code null} to
+     * disable notifications.
      */
     private String notificationThresholds;
 
     // --- state variables ---
     /**
-     * This is the MBean that is registered with the MBeanServer
+     * The live MBean that is registered with the platform MBean server. Built
+     * during {@link #activateOptions()} and updated on every {@link LogEvent}.
      */
     protected StatisticsExposingMBean mBean;
 
     // --- options ---
     /**
-     * The <b>MBeanName</b> option is used to specify the ObjectName under which the StatisticsExposingMBean in the
-     * MBeanServer. If not specified, defaults to org.perf4j:type=StatisticsExposingMBean,name=Perf4J.
+     * Returns the configured JMX {@link ObjectName} for the statistics MBean.
      *
-     * @return The value of the MBeanName option
+     * @return the JMX object name. Defaults to
+     *         {@link StatisticsExposingMBean#DEFAULT_MBEAN_NAME}.
      */
     public String getMBeanName() {
         return mBeanName;
     }
 
     /**
-     * Sets the value of the <b>MBeanName</b> option. This must be a valid JMX ObjectName.
+     * Sets the JMX {@link ObjectName} used when registering the
+     * {@link StatisticsExposingMBean}.
      *
-     * @param mBeanName The new value for the MBeanName option.
+     * @param mBeanName the new JMX object name. Must be a syntactically valid
+     *                  {@link ObjectName}; validation occurs in
+     *                  {@link #activateOptions()}.
      */
     public void setMBeanName(String mBeanName) {
         this.mBeanName = mBeanName;
     }
 
     /**
-     * The <b>TagNamesToExpose</b> option is a comma-separated list of the tag names whose statistics values (e.g.
-     * mean, min, max, etc.) should be exposed as MBeanAttributes. See the
-     * {@link org.perf4j.helpers.StatisticsExposingMBean} for more details.
+     * Returns the comma-separated list of tag names whose statistics are
+     * exposed as JMX attributes.
      *
-     * @return The value of the TagNamesToExpose expose
+     * @return the configured tag names, or {@code null} if not yet set.
      */
     public String getTagNamesToExpose() {
         return tagNamesToExpose;
     }
 
     /**
-     * Sets the value of the TagNamesToExpose option.
+     * Sets the comma-separated list of tag names whose statistics should be
+     * exposed as JMX attributes.
      *
-     * @param tagNamesToExpose The new value for the TagNamesToExpose option.
+     * @param tagNamesToExpose the comma-separated list of tag names. Required
+     *                         before {@link #activateOptions()} is called.
      */
     public void setTagNamesToExpose(String tagNamesToExpose) {
         this.tagNamesToExpose = tagNamesToExpose;
     }
 
     /**
-     * The <b>NotificationThresholds</b> option is a comma-separated list of <i>acceptable range configurations</i>.
-     * An acceptable range configuration specifies the values for which a particular timing statistic is considered
-     * good. If the statistic falls outside of this range, then a JMX notification will be sent.
-     * <p>
-     * The format of an acceptable range configuration is <tt>tagNameStatName(range)</tt> where range can be one of
-     * <tt>&lt;value</tt>, <tt>&gt;value</tt>, or <tt>minValue-maxValue</tt>. For example, suppose the
-     * TagNamesToExpose option was set to "databaseCall,fileWrite". This would cause the generated MBean to
-     * expose the following attributes:
-     * <ul>
-     *   <li>databaseCallMean
-     *   <li>databaseCallStdDev
-     *   <li>databaseCallMin
-     *   <li>databaseCallMax
-     *   <li>databaseCallCount
-     *   <li>databaseCallTPS
-     *   <li>fileWriteMean
-     *   <li>fileWriteStdDev
-     *   <li>fileWriteMin
-     *   <li>fileWriteMax
-     *   <li>fileWriteCount
-     *   <li>fileWriteTPS
-     * </ul>
-     * Suppose you wanted to have a JMX notification sent if the databaseCallMean is ever greater than 100ms, the
-     * databaseCallMax is ever greater than 1000ms, the fileWriteMean is ever less than 5ms or greater than 200ms,
-     * and the fileWriteTPS is ever less than 1 transaction per second. You would specify a NotificationThreshold as:
-     * <pre>databaseCallMean(<100),databaseCallMax(<1000),fileWriteMean(5-200),fileWriteTPS(>1)</pre>
+     * Returns the configured notification thresholds.
      *
-     * @return The value of the NotificationThresholds option
+     * <p>An example configuration:</p>
+     * <pre>databaseCallMean(&lt;100),databaseCallMax(&lt;1000),fileWriteMean(5-200),fileWriteTPS(&gt;1)</pre>
+     *
+     * @return the notification threshold configuration, or {@code null} if no
+     *         thresholds are configured.
      */
     public String getNotificationThresholds() {
         return notificationThresholds;
     }
 
     /**
-     * Sets the value of the NotificationThresholds option.
+     * Sets the notification thresholds as a comma-separated list of
+     * {@link AcceptableRangeConfiguration} expressions.
      *
-     * @param notificationThresholds The new value for the NotificationThresholds option.
+     * @param notificationThresholds the threshold expressions, or {@code null}
+     *                               to disable notifications.
      */
     public void setNotificationThresholds(String notificationThresholds) {
         this.notificationThresholds = notificationThresholds;
     }
 
+    /**
+     * Validates the configuration, builds the {@link StatisticsExposingMBean},
+     * and registers it against the platform MBean server.
+     *
+     * @throws RuntimeException if {@link #tagNamesToExpose} is {@code null}, or
+     *                          if the MBean cannot be registered with the JMX
+     *                          server (for example because the configured
+     *                          {@link #mBeanName} is not a valid
+     *                          {@link ObjectName}).
+     */
     public void activateOptions() {
         if (tagNamesToExpose == null) {
             throw new RuntimeException("You must set the TagNamesToExpose option before activating this appender");
@@ -174,7 +228,7 @@ public class JmxAttributeStatisticsAppender extends AbstractAppender {
                 rangeConfigs.add(new AcceptableRangeConfiguration(rangeConfigString));
             }
         }
-        
+
         mBean = new StatisticsExposingMBean(mBeanName, Arrays.asList(tagNames), rangeConfigs);
 
         try {
@@ -187,6 +241,13 @@ public class JmxAttributeStatisticsAppender extends AbstractAppender {
 
     // --- appender interface methods ---
 
+    /**
+     * Forwards each accepted {@link LogEvent} to the underlying MBean. Events
+     * whose message is not a {@link GroupedTimingStatistics} (or for which the
+     * MBean has not yet been activated) are silently ignored.
+     *
+     * @param event the log event emitted by the Log4j 2 runtime.
+     */
     public void append(LogEvent event) {
         Object logMessage = event.getMessage();
         if (logMessage instanceof GroupedTimingStatistics && mBean != null) {
@@ -194,10 +255,20 @@ public class JmxAttributeStatisticsAppender extends AbstractAppender {
         }
     }
 
+    /**
+     * Indicates that this appender does not require a layout to function.
+     *
+     * @return {@code false} &mdash; the appender is layout-agnostic.
+     */
     public boolean requiresLayout() {
         return false;
     }
 
+    /**
+     * Unregisters the underlying MBean from the platform MBean server. Errors
+     * during unregistration are intentionally swallowed &mdash; the MBean may
+     * already be gone during container shutdown.
+     */
     public void close() {
         try {
             MBeanServer mBeanServer = getMBeanServer();
@@ -209,14 +280,15 @@ public class JmxAttributeStatisticsAppender extends AbstractAppender {
 
     // --- helper methods ---
     /**
-     * Gets the MBeanServer that should be used to register the StatisticsExposingMBean. Defaults to the Java Platform
-     * MBeanServer. Subclasses could override this to use a different server.
+     * Returns the MBean server against which the statistics MBean is registered.
+     * Defaults to the platform MBean server but subclasses may override to use
+     * a custom server.
      *
-     * @return The MBeanServer to use for registrations.
+     * @return the MBean server used for registrations.
      */
     protected MBeanServer getMBeanServer() {
         return ManagementFactory.getPlatformMBeanServer();
     }
 
-   
+
 }
