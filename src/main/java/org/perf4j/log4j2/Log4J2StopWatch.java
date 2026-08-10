@@ -30,7 +30,7 @@ import org.perf4j.LoggingStopWatch;
  * </ul>
  *
  * @author Alex Devine
- * @author [@Loong Wan](https://github.com/loong10k)
+ * @author <a href="https://github.com/loong10k">Loong Wan</a>
  * @since 3.0.0
  * @see LoggingStopWatch
  * @see org.perf4j.log4j2.aop.TimingAspect

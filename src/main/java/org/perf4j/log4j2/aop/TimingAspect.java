@@ -16,7 +16,7 @@ import org.perf4j.log4j2.Log4J2StopWatch;
  * {@code @within(org.perf4j.aop.Profiled)} or equivalent.</p>
  *
  * @author Alex Devine
- * @author [@Loong Wan](https://github.com/loong10k)
+ * @author <a href="https://github.com/loong10k">Loong Wan</a>
  * @since 3.0.0
  * @see AbstractTimingAspect
  * @see Log4J2StopWatch
