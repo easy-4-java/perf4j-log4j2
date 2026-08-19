@@ -5,7 +5,7 @@
     <artifactId>perf4j-log4j2</artifactId>
     <name>${project.groupId}:${project.artifactId}</name>
     <url>https://github.com/easy-4-java/${project.artifactId}</url>
-    <version>1.0.x.20260630-SNAPSHOT</version>
+    <version>2.0.x.20260630-SNAPSHOT</version>
     <description>Perf4j Extension Whith Log4j 2.x</description>
     <packaging>jar</packaging>
 
@@ -40,7 +40,7 @@
 
     <properties>
         <!-- ═══ 第一段: 基础属性（自然排序）═══ -->
-        <java.version>1.8</java.version>
+        <java.version>17</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <maven.version>3.9.16</maven.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -51,7 +51,7 @@
             <commons-csv.version>1.7</commons-csv.version>
             <commons-io.version>2.22.0</commons-io.version>
             <commons-lang3.version>3.20.0</commons-lang3.version>
-            <junit-jupiter.version>5.11.4</junit-jupiter.version>
+            <junit-jupiter.version>6.1.0</junit-jupiter.version>
             <junit.version>4.13.2</junit.version>
             <log4j2.version>2.24.3</log4j2.version>
             <perf4j.version>0.9.16</perf4j.version>
@@ -340,8 +340,7 @@
                         <skip>false</skip>
                         <skipTests>false</skipTests>
                         <forkMode>once</forkMode>
-                        <argLine>-Xmx1024m
-							-Dfile.encoding=UTF-8</argLine>
+                        <argLine>-Xmx1024m -Dfile.encoding=UTF-8</argLine>
                         <additionalClasspathElements>
                             <additionalClasspathElement>${basedir}/target/test-classes</additionalClasspathElement>
                         </additionalClasspathElements>
