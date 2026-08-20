@@ -44,8 +44,8 @@
         <!-- Dependency versions -->
         <aspectj.version>1.8.9</aspectj.version>
         <commons-csv.version>1.11.0</commons-csv.version>
-        <commons-io.version>2.20.0</commons-io.version>
-        <commons-lang3.version>3.18.0</commons-lang3.version>
+        <commons-io.version>2.22.0</commons-io.version>
+        <commons-lang3.version>3.20.0</commons-lang3.version>
         <junit-jupiter.version>5.11.4</junit-jupiter.version>
         <junit.version>4.13.2</junit.version>
         <log4j2.version>2.24.3</log4j2.version>
