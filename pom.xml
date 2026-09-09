@@ -467,7 +467,6 @@
             </activation>
             <properties>
                 
-                <additionalparam>-Xdoclint:none</additionalparam>
                 <lombok.version>1.18.46</lombok.version>
                 
                 <maven-central-publishing-plugin.version>0.11.0</maven-central-publishing-plugin.version>
